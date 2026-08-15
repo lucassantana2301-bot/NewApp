@@ -17,7 +17,7 @@ import {
   Sparkles, 
   CalendarCheck, 
   CheckCircle2, 
-  Leaf,
+  Activity,
   CalendarDays
 } from 'lucide-react';
 import { 
