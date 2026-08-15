@@ -18,12 +18,16 @@ import {
   CalendarCheck, 
   CheckCircle2, 
   Activity,
-  CalendarDays
+  CalendarDays,
+  MessageCircle,
+  Zap,
+  Filter
 } from 'lucide-react';
 import { 
   fetchDashboardData, 
   clearActiveSession, 
-  seedDemoData 
+  seedDemoData,
+  checkNeonConnection 
 } from '../lib/neonClient';
 import PatientFormScreen from './PatientFormScreen';
 import PatientProfileScreen from './PatientProfileScreen';
@@ -32,9 +36,11 @@ export default function DashboardScreen({ user, onLogout }) {
   // Views: 'dashboard' | 'pacientes' | 'novo-paciente' | 'perfil-paciente'
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedPatientId, setSelectedPatientId] = useState(null);
+  const [patientFilter, setPatientFilter] = useState('todos'); // 'todos' | 'sem_retorno'
   
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [dbStatus, setDbStatus] = useState({ ok: true, latency: 28 });
   const [dashboardData, setDashboardData] = useState({
     totalPacientes: 0,
     consultasSemana: 0,
@@ -74,6 +80,8 @@ export default function DashboardScreen({ user, onLogout }) {
         const data = await fetchDashboardData(user.id);
         setDashboardData(data);
       }
+      const ping = await checkNeonConnection();
+      setDbStatus(ping);
     } catch (err) {
       console.error('Erro ao carregar dados do Neon:', err);
     } finally {
@@ -110,6 +118,14 @@ export default function DashboardScreen({ user, onLogout }) {
     }
   };
 
+  // Callback de paciente excluído
+  const handlePatientDeleted = () => {
+    showToast('Paciente excluído com sucesso.');
+    setSelectedPatientId(null);
+    setCurrentView('pacientes');
+    loadData(false);
+  };
+
   // Gerar dados de teste caso a tabela esteja vazia
   const handleSeedDemoData = async () => {
     setDemoLoading(true);
@@ -124,12 +140,35 @@ export default function DashboardScreen({ user, onLogout }) {
     }
   };
 
-  const filteredPacientes = dashboardData.pacientes.filter((p) =>
-    p.nome?.toLowerCase().includes(patientSearch.toLowerCase()) ||
-    (p.email && p.email.toLowerCase().includes(patientSearch.toLowerCase())) ||
-    (p.telefone && p.telefone.includes(patientSearch)) ||
-    (p.objetivo_texto && p.objetivo_texto.toLowerCase().includes(patientSearch.toLowerCase()))
-  );
+  // Abrir WhatsApp rápido
+  const handleQuickWhatsApp = (e, paciente) => {
+    e.stopPropagation();
+    const raw = paciente.whatsapp || paciente.telefone || '';
+    const clean = raw.replace(/\D/g, '');
+    if (!clean) {
+      alert('Paciente sem WhatsApp cadastrado.');
+      return;
+    }
+    const nome = paciente.nome.split(' ')[0];
+    const msg = `Olá ${nome}! Aqui é do consultório de nutrição do(a) ${displayName}. Gostaria de agendar o seu retorno nutricional?`;
+    window.open(`https://wa.me/55${clean}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
+  // Filtragem dos pacientes
+  const filteredPacientes = dashboardData.pacientes.filter((p) => {
+    const matchesSearch = p.nome?.toLowerCase().includes(patientSearch.toLowerCase()) ||
+      (p.email && p.email.toLowerCase().includes(patientSearch.toLowerCase())) ||
+      (p.telefone && p.telefone.includes(patientSearch)) ||
+      (p.objetivo_texto && p.objetivo_texto.toLowerCase().includes(patientSearch.toLowerCase()));
+
+    if (!matchesSearch) return false;
+
+    if (patientFilter === 'sem_retorno') {
+      return dashboardData.pacientesSemRetorno.some(sr => sr.id === p.id);
+    }
+
+    return true;
+  });
 
   return (
     <div className="dashboard-app-layout">
@@ -173,9 +212,20 @@ export default function DashboardScreen({ user, onLogout }) {
             }}
           >
             <Users size={18} />
-            <span>Pacientes</span>
+            <span>Pacientes ({dashboardData.totalPacientes})</span>
           </button>
         </nav>
+
+        {/* Status Neon Serverless */}
+        <div style={{ padding: '0 14px', marginBottom: '8px' }}>
+          <div style={{ background: '#18181b', border: '1px solid #27272a', padding: '8px 12px', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#a1a1aa' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: dbStatus.ok ? '#22c55e' : '#ef4444', boxShadow: dbStatus.ok ? '0 0 8px #22c55e' : 'none' }}></span>
+              Neon PostgreSQL
+            </span>
+            <span style={{ color: '#ffffff', fontWeight: '800' }}>{dbStatus.latency}ms</span>
+          </div>
+        </div>
 
         {/* Rodapé da Sidebar com Usuário e Logout */}
         <div className="sidebar-footer">
@@ -237,8 +287,8 @@ export default function DashboardScreen({ user, onLogout }) {
 
             {loading ? (
               <div style={{ textAlign: 'center', padding: '80px 0' }}>
-                <div className="spinner" style={{ width: '36px', height: '36px', margin: '0 auto 16px auto', borderTopColor: 'var(--primary)' }}></div>
-                <p style={{ fontWeight: '600', color: 'var(--text-muted)' }}>Carregando dados em tempo real do Neon...</p>
+                <div className="spinner" style={{ width: '36px', height: '36px', margin: '0 auto 16px auto' }}></div>
+                <p style={{ fontWeight: '700', color: 'var(--text-main)' }}>Carregando dados em tempo real do Neon...</p>
               </div>
             ) : (
               <>
@@ -291,11 +341,11 @@ export default function DashboardScreen({ user, onLogout }) {
                     <span
                       style={{
                         fontSize: '12px',
-                        fontWeight: '700',
+                        fontWeight: '800',
                         padding: '4px 12px',
                         borderRadius: '20px',
-                        background: dashboardData.pacientesSemRetorno.length > 0 ? '#fef3c7' : '#ecfdf5',
-                        color: dashboardData.pacientesSemRetorno.length > 0 ? '#b45309' : '#059669',
+                        background: dashboardData.pacientesSemRetorno.length > 0 ? '#fee2e2' : '#f0fdf4',
+                        color: dashboardData.pacientesSemRetorno.length > 0 ? '#991b1b' : '#166534',
                       }}
                     >
                       {dashboardData.pacientesSemRetorno.length} {dashboardData.pacientesSemRetorno.length === 1 ? 'paciente' : 'pacientes'}
@@ -329,7 +379,7 @@ export default function DashboardScreen({ user, onLogout }) {
                               {paciente.nome}
                               <ChevronRight size={15} style={{ opacity: 0.6 }} />
                             </div>
-                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', gap: '14px' }}>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', display: 'flex', gap: '14px', flexWrap: 'wrap' }}>
                               {paciente.telefone && (
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                                   <Phone size={12} /> {paciente.telefone}
@@ -346,11 +396,21 @@ export default function DashboardScreen({ user, onLogout }) {
                             </div>
                           </div>
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                             <div className="sem-retorno-badge-alert">
                               <Clock size={13} />
                               <span>Sem retorno há {paciente.dias_sem_consulta || '30+'} dias</span>
                             </div>
+
+                            <button
+                              className="btn-icon-secondary"
+                              style={{ color: '#16a34a', borderColor: '#bbf7d0', padding: '6px 10px' }}
+                              onClick={(e) => handleQuickWhatsApp(e, paciente)}
+                              title="Chamar no WhatsApp"
+                            >
+                              <MessageCircle size={14} />
+                            </button>
+
                             <button
                               className="btn-icon-secondary"
                               style={{ padding: '6px 12px', fontSize: '12px' }}
@@ -429,9 +489,9 @@ export default function DashboardScreen({ user, onLogout }) {
               </button>
             </div>
 
-            {/* Campo de Busca no Topo */}
-            <div style={{ marginBottom: '24px' }}>
-              <div style={{ position: 'relative', width: '100%', maxWidth: '450px' }}>
+            {/* Barra de Busca e Filtros Rápidos */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', marginBottom: '24px', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', width: '100%', maxWidth: '420px' }}>
                 <Search
                   size={18}
                   style={{
@@ -444,12 +504,28 @@ export default function DashboardScreen({ user, onLogout }) {
                 />
                 <input
                   type="text"
-                  placeholder="Buscar paciente por nome..."
+                  placeholder="Buscar paciente por nome, email ou telefone..."
                   value={patientSearch}
                   onChange={(e) => setPatientSearch(e.target.value)}
                   className="form-input"
                   style={{ paddingLeft: '42px', height: '44px' }}
                 />
+              </div>
+
+              {/* Filtros */}
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className={`chip-select-btn ${patientFilter === 'todos' ? 'selected' : ''}`}
+                  onClick={() => setPatientFilter('todos')}
+                >
+                  Todos ({dashboardData.totalPacientes})
+                </button>
+                <button
+                  className={`chip-select-btn ${patientFilter === 'sem_retorno' ? 'selected' : ''}`}
+                  onClick={() => setPatientFilter('sem_retorno')}
+                >
+                  <AlertTriangle size={13} /> Sem Retorno ({dashboardData.pacientesSemRetorno.length})
+                </button>
               </div>
             </div>
 
@@ -475,7 +551,7 @@ export default function DashboardScreen({ user, onLogout }) {
               </div>
             ) : filteredPacientes.length === 0 ? (
               <div className="empty-state-box">
-                <p style={{ color: 'var(--text-muted)' }}>Nenhum paciente encontrado com o nome "{patientSearch}".</p>
+                <p style={{ color: 'var(--text-muted)' }}>Nenhum paciente encontrado com o filtro selecionado.</p>
               </div>
             ) : (
               <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--radius-xl)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
@@ -497,14 +573,14 @@ export default function DashboardScreen({ user, onLogout }) {
                       return (
                         <tr
                           key={paciente.id}
-                          style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer', transition: 'background 0.15s' }}
+                          style={{ borderBottom: '1px solid #f4f4f5', cursor: 'pointer', transition: 'background 0.15s' }}
                           onClick={() => handleOpenPatientProfile(paciente.id)}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = '#f8fafc')}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = '#fef2f2')}
                           onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                         >
                           {/* Nome */}
                           <td style={{ padding: '18px 24px' }}>
-                            <div style={{ fontWeight: '700', color: 'var(--text-main)', fontSize: '15px' }}>
+                            <div style={{ fontWeight: '800', color: 'var(--text-main)', fontSize: '15px' }}>
                               {paciente.nome}
                             </div>
                             <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
@@ -514,7 +590,7 @@ export default function DashboardScreen({ user, onLogout }) {
 
                           {/* Objetivo */}
                           <td style={{ padding: '18px 24px' }}>
-                            <span style={{ fontSize: '13px', color: 'var(--text-main)', fontWeight: '500' }}>
+                            <span style={{ fontSize: '13px', color: 'var(--text-main)', fontWeight: '600' }}>
                               {objetivosList}
                             </span>
                           </td>
@@ -522,7 +598,7 @@ export default function DashboardScreen({ user, onLogout }) {
                           {/* Data da Última Consulta */}
                           <td style={{ padding: '18px 24px' }}>
                             {paciente.ultima_consulta_data ? (
-                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '600', color: 'var(--primary)' }}>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '700', color: 'var(--primary)' }}>
                                 <CalendarDays size={14} />
                                 {new Date(paciente.ultima_consulta_data).toLocaleDateString('pt-BR')}
                               </div>
@@ -535,16 +611,29 @@ export default function DashboardScreen({ user, onLogout }) {
 
                           {/* Ação */}
                           <td style={{ padding: '18px 24px', textAlign: 'right' }}>
-                            <button
-                              className="btn-icon-secondary"
-                              style={{ padding: '6px 14px', fontSize: '12px' }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenPatientProfile(paciente.id);
-                              }}
-                            >
-                              Ver Perfil <ChevronRight size={14} />
-                            </button>
+                            <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
+                              {(paciente.whatsapp || paciente.telefone) && (
+                                <button
+                                  className="btn-icon-secondary"
+                                  style={{ color: '#16a34a', borderColor: '#bbf7d0', padding: '6px 10px' }}
+                                  onClick={(e) => handleQuickWhatsApp(e, paciente)}
+                                  title="Chamar no WhatsApp"
+                                >
+                                  <MessageCircle size={14} />
+                                </button>
+                              )}
+
+                              <button
+                                className="btn-icon-secondary"
+                                style={{ padding: '6px 14px', fontSize: '12px' }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenPatientProfile(paciente.id);
+                                }}
+                              >
+                                Ver Perfil <ChevronRight size={14} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -578,6 +667,7 @@ export default function DashboardScreen({ user, onLogout }) {
               setCurrentView('pacientes');
               setSelectedPatientId(null);
             }}
+            onDeleted={handlePatientDeleted}
           />
         )}
       </main>

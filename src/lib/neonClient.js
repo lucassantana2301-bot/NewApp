@@ -335,6 +335,92 @@ export async function createConsulta(consultaData) {
   return res[0];
 }
 
+// 7. Salvar ou atualizar Plano Alimentar do Paciente
+export async function savePlanoAlimentar(pacienteId, conteudo) {
+  const sql = getSql();
+  if (!sql) throw new Error('Conexão com o banco Neon indisponível.');
+
+  const conteudoJson = typeof conteudo === 'string' ? conteudo : JSON.stringify(conteudo);
+
+  // Verificar se já existe plano
+  const existing = await sql`
+    SELECT id FROM public.planos_alimentares WHERE paciente_id = ${pacienteId} LIMIT 1
+  `;
+
+  if (existing && existing.length > 0) {
+    const res = await sql`
+      UPDATE public.planos_alimentares
+      SET conteudo = ${conteudoJson}::jsonb, created_at = NOW()
+      WHERE paciente_id = ${pacienteId}
+      RETURNING *
+    `;
+    return res[0];
+  } else {
+    const res = await sql`
+      INSERT INTO public.planos_alimentares (paciente_id, conteudo)
+      VALUES (${pacienteId}, ${conteudoJson}::jsonb)
+      RETURNING *
+    `;
+    return res[0];
+  }
+}
+
+// 8. Buscar Plano Alimentar do Paciente
+export async function fetchPlanoAlimentar(pacienteId) {
+  const sql = getSql();
+  if (!sql) return null;
+
+  try {
+    const res = await sql`
+      SELECT * FROM public.planos_alimentares
+      WHERE paciente_id = ${pacienteId}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    return res && res.length > 0 ? res[0] : null;
+  } catch (err) {
+    console.error('Erro ao buscar plano alimentar:', err);
+    return null;
+  }
+}
+
+// 9. Excluir Paciente e seus dados relacionados
+export async function deletePaciente(pacienteId, nutricionistaId) {
+  const sql = getSql();
+  if (!sql) throw new Error('Conexão com o banco Neon indisponível.');
+
+  // Excluir consultas e planos antes do paciente
+  await sql`DELETE FROM public.consultas WHERE paciente_id = ${pacienteId}`;
+  await sql`DELETE FROM public.planos_alimentares WHERE paciente_id = ${pacienteId}`;
+  await sql`DELETE FROM public.pacientes WHERE id = ${pacienteId} AND nutricionista_id = ${nutricionistaId}`;
+
+  return true;
+}
+
+// 10. Excluir Consulta
+export async function deleteConsulta(consultaId) {
+  const sql = getSql();
+  if (!sql) throw new Error('Conexão com o banco Neon indisponível.');
+
+  await sql`DELETE FROM public.consultas WHERE id = ${consultaId}`;
+  return true;
+}
+
+// 11. Testar Conexão com o Neon e medir latência
+export async function checkNeonConnection() {
+  const sql = getSql();
+  if (!sql) return { ok: false, latency: 0, message: 'URL não configurada' };
+
+  const start = performance.now();
+  try {
+    await sql`SELECT 1 as ping`;
+    const latency = Math.round(performance.now() - start);
+    return { ok: true, latency, message: 'Conectado' };
+  } catch (err) {
+    return { ok: false, latency: 0, message: err.message };
+  }
+}
+
 // 7. Popular dados de exemplo no Neon para a nutricionista logada
 export async function seedDemoData(nutricionistaId) {
   const sql = getSql();
