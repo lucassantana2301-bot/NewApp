@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Leaf, Database } from 'lucide-react';
+import { Leaf, Database } from 'lucide-react';
 import LoginScreen from './components/LoginScreen';
 import SignUpScreen from './components/SignUpScreen';
 import DashboardScreen from './components/DashboardScreen';
@@ -70,6 +70,26 @@ export default function App() {
     );
   }
 
+  // Se o usuário estiver logado, renderiza o layout do Dashboard
+  if (user || currentScreen === 'dashboard') {
+    return (
+      <>
+        <DashboardScreen
+          user={user}
+          onLogout={handleLogout}
+        />
+
+        {/* Neon settings modal */}
+        <NeonSettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          onConfigSaved={() => setConfigVersion((v) => v + 1)}
+        />
+      </>
+    );
+  }
+
+  // Telas de Autenticação (Login & Cadastro)
   return (
     <div className="app-viewport">
       {/* Background blobs */}
@@ -90,13 +110,7 @@ export default function App() {
         </button>
       </div>
 
-      {/* Dynamic Screen rendering */}
-      {user || currentScreen === 'dashboard' ? (
-        <DashboardScreen
-          user={user}
-          onLogout={handleLogout}
-        />
-      ) : currentScreen === 'signup' ? (
+      {currentScreen === 'signup' ? (
         <SignUpScreen
           onNavigateToLogin={() => setCurrentScreen('login')}
           onSignUpSuccess={handleSignUpSuccess}

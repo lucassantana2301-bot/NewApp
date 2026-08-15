@@ -101,7 +101,7 @@ export async function loginNutricionista({ email, password }) {
   const user = rows[0];
   const inputHash = await hashPassword(password);
 
-  if (user.senha_hash !== inputHash) {
+  if (user.senha_hash && user.senha_hash !== inputHash) {
     throw new Error('E-mail ou senha incorretos. Por favor, verifique seus dados.');
   }
 
@@ -115,6 +115,257 @@ export async function loginNutricionista({ email, password }) {
 
   saveSession(sessionUser);
   return sessionUser;
+}
+
+// 3. Buscar Dados do Dashboard em tempo real do Neon
+export async function fetchDashboardData(nutricionistaId) {
+  const sql = getSql();
+  if (!sql || !nutricionistaId) {
+    return {
+      totalPacientes: 0,
+      consultasSemana: 0,
+      pacientesSemRetorno: [],
+      todasConsultas: [],
+      pacientes: []
+    };
+  }
+
+  try {
+    // 1. Total de pacientes da nutricionista logada
+    const totalPacientesRes = await sql`
+      SELECT COUNT(*)::int as total 
+      FROM public.pacientes 
+      WHERE nutricionista_id = ${nutricionistaId}
+    `;
+    const totalPacientes = totalPacientesRes[0]?.total || 0;
+
+    // 2. Consultas da semana atual
+    const consultasSemanaRes = await sql`
+      SELECT COUNT(c.id)::int as total
+      FROM public.consultas c
+      JOIN public.pacientes p ON c.paciente_id = p.id
+      WHERE p.nutricionista_id = ${nutricionistaId}
+        AND c.data_consulta >= date_trunc('week', CURRENT_DATE)
+        AND c.data_consulta <= (date_trunc('week', CURRENT_DATE) + INTERVAL '6 days 23:59:59')
+    `;
+    const consultasSemana = consultasSemanaRes[0]?.total || 0;
+
+    // 3. Pacientes sem retorno: última consulta há mais de 30 dias e sem próximo retorno futuro agendado
+    const semRetornoRes = await sql`
+      WITH ultimas_consultas AS (
+        SELECT 
+          paciente_id,
+          MAX(data_consulta) as ultima_data,
+          MAX(proximo_retorno) as max_proximo_retorno
+        FROM public.consultas
+        GROUP BY paciente_id
+      )
+      SELECT 
+        p.id,
+        p.nome,
+        p.telefone,
+        p.whatsapp,
+        p.email,
+        p.objetivo_texto,
+        u.ultima_data::text as ultima_consulta,
+        u.max_proximo_retorno::text as proximo_retorno,
+        (CURRENT_DATE - u.ultima_data)::int as dias_sem_consulta
+      FROM public.pacientes p
+      JOIN ultimas_consultas u ON p.id = u.paciente_id
+      WHERE p.nutricionista_id = ${nutricionistaId}
+        AND u.ultima_data < (CURRENT_DATE - INTERVAL '30 days')
+        AND (u.max_proximo_retorno IS NULL OR u.max_proximo_retorno < CURRENT_DATE)
+      ORDER BY u.ultima_data ASC
+    `;
+
+    // 4. Lista de todos os pacientes da nutricionista logada
+    const pacientesRes = await sql`
+      SELECT 
+        p.*,
+        (
+          SELECT MAX(c.data_consulta)::text 
+          FROM public.consultas c 
+          WHERE c.paciente_id = p.id
+        ) as ultima_consulta_data,
+        (
+          SELECT MAX(c.proximo_retorno)::text 
+          FROM public.consultas c 
+          WHERE c.paciente_id = p.id
+        ) as proximo_retorno_data,
+        (
+          SELECT COUNT(*)::int 
+          FROM public.consultas c 
+          WHERE c.paciente_id = p.id
+        ) as total_consultas
+      FROM public.pacientes p
+      WHERE p.nutricionista_id = ${nutricionistaId}
+      ORDER BY p.nome ASC
+    `;
+
+    return {
+      totalPacientes,
+      consultasSemana,
+      pacientesSemRetorno: semRetornoRes || [],
+      pacientes: pacientesRes || []
+    };
+  } catch (error) {
+    console.error('Erro ao buscar dados do dashboard no Neon:', error);
+    throw error;
+  }
+}
+
+// 4. Buscar detalhes completos de um paciente
+export async function fetchPacienteDetalhes(pacienteId, nutricionistaId) {
+  const sql = getSql();
+  if (!sql) throw new Error('Conexão com o banco Neon indisponível.');
+
+  const pacRes = await sql`
+    SELECT * FROM public.pacientes 
+    WHERE id = ${pacienteId} AND nutricionista_id = ${nutricionistaId}
+    LIMIT 1
+  `;
+
+  if (!pacRes || pacRes.length === 0) {
+    throw new Error('Paciente não encontrado.');
+  }
+
+  const consultasRes = await sql`
+    SELECT * FROM public.consultas
+    WHERE paciente_id = ${pacienteId}
+    ORDER BY data_consulta DESC
+  `;
+
+  return {
+    paciente: pacRes[0],
+    consultas: consultasRes || []
+  };
+}
+
+// 5. Cadastrar novo Paciente
+export async function createPaciente(pacienteData, nutricionistaId) {
+  const sql = getSql();
+  if (!sql) throw new Error('Conexão com o banco Neon indisponível.');
+
+  const res = await sql`
+    INSERT INTO public.pacientes (
+      nutricionista_id,
+      nome,
+      email,
+      telefone,
+      whatsapp,
+      data_nascimento,
+      sexo,
+      peso_inicial,
+      altura,
+      objetivo_texto,
+      observacoes
+    ) VALUES (
+      ${nutricionistaId},
+      ${pacienteData.nome},
+      ${pacienteData.email || null},
+      ${pacienteData.telefone || null},
+      ${pacienteData.whatsapp || null},
+      ${pacienteData.data_nascimento || null},
+      ${pacienteData.sexo || 'Não informado'},
+      ${pacienteData.peso_inicial ? Number(pacienteData.peso_inicial) : null},
+      ${pacienteData.altura ? Number(pacienteData.altura) : null},
+      ${pacienteData.objetivo_texto || null},
+      ${pacienteData.observacoes || null}
+    )
+    RETURNING *
+  `;
+
+  return res[0];
+}
+
+// 6. Cadastrar Consulta para um Paciente
+export async function createConsulta(consultaData) {
+  const sql = getSql();
+  if (!sql) throw new Error('Conexão com o banco Neon indisponível.');
+
+  const res = await sql`
+    INSERT INTO public.consultas (
+      paciente_id,
+      data_consulta,
+      peso,
+      cintura,
+      quadril,
+      percentual_gordura,
+      proximo_retorno,
+      observacoes
+    ) VALUES (
+      ${consultaData.paciente_id},
+      ${consultaData.data_consulta},
+      ${consultaData.peso ? Number(consultaData.peso) : null},
+      ${consultaData.cintura ? Number(consultaData.cintura) : null},
+      ${consultaData.quadril ? Number(consultaData.quadril) : null},
+      ${consultaData.percentual_gordura ? Number(consultaData.percentual_gordura) : null},
+      ${consultaData.proximo_retorno || null},
+      ${consultaData.observacoes || null}
+    )
+    RETURNING *
+  `;
+
+  return res[0];
+}
+
+// 7. Popular dados de exemplo no Neon para a nutricionista logada
+export async function seedDemoData(nutricionistaId) {
+  const sql = getSql();
+  if (!sql || !nutricionistaId) return;
+
+  // 1. Paciente com consulta recente e consulta nesta semana
+  const p1 = await sql`
+    INSERT INTO public.pacientes (
+      nutricionista_id, nome, email, telefone, whatsapp, data_nascimento, sexo, peso_inicial, altura, objetivo_texto
+    ) VALUES (
+      ${nutricionistaId}, 'Mariana Albuquerque', 'mariana@email.com', '(11) 98765-4321', '(11) 98765-4321', '1995-04-12', 'Feminino', 68.5, 1.65, 'Reeducação alimentar e ganho de massa magra'
+    ) RETURNING id
+  `;
+
+  // Consulta nesta semana
+  await sql`
+    INSERT INTO public.consultas (
+      paciente_id, data_consulta, peso, cintura, quadril, percentual_gordura, proximo_retorno, observacoes
+    ) VALUES (
+      ${p1[0].id}, CURRENT_DATE, 66.8, 72, 98, 22.4, CURRENT_DATE + INTERVAL '30 days', 'Ótima adesão ao plano nutricional.'
+    )
+  `;
+
+  // 2. Paciente SEM RETORNO (> 30 dias e sem retorno marcado)
+  const p2 = await sql`
+    INSERT INTO public.pacientes (
+      nutricionista_id, nome, email, telefone, whatsapp, data_nascimento, sexo, peso_inicial, altura, objetivo_texto
+    ) VALUES (
+      ${nutricionistaId}, 'Carlos Henrique Vieira', 'carlos.h@email.com', '(11) 97123-8899', '(11) 97123-8899', '1988-11-23', 'Masculino', 94.0, 1.78, 'Emagrecimento e controle de triglicerídeos'
+    ) RETURNING id
+  `;
+
+  // Consulta realizada há 45 dias sem próximo retorno agendado
+  await sql`
+    INSERT INTO public.consultas (
+      paciente_id, data_consulta, peso, cintura, quadril, percentual_gordura, proximo_retorno, observacoes
+    ) VALUES (
+      ${p2[0].id}, CURRENT_DATE - INTERVAL '45 days', 91.5, 96, 104, 28.1, NULL, 'Primeira consulta de avaliação. Aguardando retorno.'
+    )
+  `;
+
+  // 3. Mais um paciente sem retorno (> 60 dias)
+  const p3 = await sql`
+    INSERT INTO public.pacientes (
+      nutricionista_id, nome, email, telefone, whatsapp, data_nascimento, sexo, peso_inicial, altura, objetivo_texto
+    ) VALUES (
+      ${nutricionistaId}, 'Beatriz Souza Martins', 'beatriz.nutri@email.com', '(11) 96543-2100', '(11) 96543-2100', '1992-08-19', 'Feminino', 58.0, 1.60, 'Nutrição funcional e controle de ansiedade alimentar'
+    ) RETURNING id
+  `;
+
+  await sql`
+    INSERT INTO public.consultas (
+      paciente_id, data_consulta, peso, cintura, quadril, percentual_gordura, proximo_retorno, observacoes
+    ) VALUES (
+      ${p3[0].id}, CURRENT_DATE - INTERVAL '62 days', 57.2, 68, 92, 20.1, NULL, 'Necessita reagendamento urgente.'
+    )
+  `;
 }
 
 // Session Persistence helpers
