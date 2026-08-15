@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Leaf, Database } from 'lucide-react';
+import { Activity, Database } from 'lucide-react';
 import LoginScreen from './components/LoginScreen';
 import SignUpScreen from './components/SignUpScreen';
 import DashboardScreen from './components/DashboardScreen';
@@ -61,10 +61,10 @@ export default function App() {
         </div>
         <div style={{ textAlign: 'center', animation: 'fadeIn 0.3s ease' }}>
           <div className="logo-badge large" style={{ margin: '0 auto 16px auto' }}>
-            <Leaf size={32} strokeWidth={2.3} />
+            <Activity size={32} strokeWidth={2.6} />
           </div>
-          <div className="spinner" style={{ margin: '0 auto 12px auto', width: '28px', height: '28px', borderTopColor: 'var(--primary)', borderColor: 'var(--primary-border)' }}></div>
-          <p style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-muted)' }}>Carregando o NutriSystem...</p>
+          <div className="spinner" style={{ margin: '0 auto 12px auto', width: '30px', height: '30px', borderTopColor: 'var(--primary)', borderColor: 'var(--primary-border)' }}></div>
+          <p style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-main)' }}>Carregando Nutri lucas...</p>
         </div>
       </div>
     );

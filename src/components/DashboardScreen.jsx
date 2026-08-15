@@ -141,14 +141,14 @@ export default function DashboardScreen({ user, onLogout }) {
         </div>
       )}
 
-      {/* Menu Lateral Fixo com Logo "Nutri lucas " */}
+      {/* Menu Lateral Fixo com Logo "Nutri lucas" */}
       <aside className="sidebar-fixed">
         <div className="sidebar-brand">
           <div className="sidebar-brand-icon">
-            <Leaf size={22} strokeWidth={2.4} />
+            <Activity size={22} strokeWidth={2.8} />
           </div>
           <div className="sidebar-brand-text">
-            Nutri <span>lucas </span>
+            Nutri <span>lucas</span>
           </div>
         </div>
 
@@ -372,7 +372,7 @@ export default function DashboardScreen({ user, onLogout }) {
                 {dashboardData.totalPacientes === 0 && (
                   <div
                     style={{
-                      background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+                      background: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)',
                       border: '1px solid var(--primary-border)',
                       borderRadius: 'var(--radius-xl)',
                       padding: '24px 28px',
@@ -381,19 +381,20 @@ export default function DashboardScreen({ user, onLogout }) {
                       alignItems: 'center',
                       flexWrap: 'wrap',
                       gap: '16px',
+                      animation: 'fadeInUp 0.3s ease',
                     }}
                   >
                     <div>
-                      <h4 style={{ fontSize: '16px', fontWeight: '800', color: 'var(--primary-hover)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <h4 style={{ fontSize: '16px', fontWeight: '900', color: '#991b1b', display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <Sparkles size={18} /> Banco de dados pronto no Neon!
                       </h4>
-                      <p style={{ fontSize: '13px', color: '#065f46', marginTop: '4px' }}>
+                      <p style={{ fontSize: '13px', color: '#7f1d1d', marginTop: '4px' }}>
                         Você pode cadastrar seus pacientes ou gerar 3 pacientes de exemplo para testar os 3 cards do Dashboard.
                       </p>
                     </div>
                     <button
                       className="btn-primary"
-                      style={{ width: 'auto', height: '40px', padding: '0 18px', fontSize: '13px' }}
+                      style={{ width: 'auto', height: '42px', padding: '0 20px', fontSize: '13px' }}
                       onClick={handleSeedDemoData}
                       disabled={demoLoading}
                     >

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, Leaf } from 'lucide-react';
+import { Activity, Flame, Utensils } from 'lucide-react';
 
 export default function Logo({ showSubtitle = true, size = 'normal' }) {
   const isLarge = size === 'large';
@@ -7,10 +7,10 @@ export default function Logo({ showSubtitle = true, size = 'normal' }) {
   return (
     <div className="logo-container">
       <div className={`logo-badge ${isLarge ? 'large' : ''}`}>
-        <Leaf size={isLarge ? 32 : 28} strokeWidth={2.3} />
+        <Activity size={isLarge ? 32 : 26} strokeWidth={2.5} />
       </div>
       <div className="logo-text">
-        Nutri<span>System</span>
+        Nutri <span>lucas</span>
       </div>
       {showSubtitle && (
         <div className="logo-subtitle">Sistema de Gestão para Nutricionistas</div>
