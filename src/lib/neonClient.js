@@ -241,7 +241,7 @@ export async function fetchPacienteDetalhes(pacienteId, nutricionistaId) {
   };
 }
 
-// 5. Cadastrar novo Paciente
+// 5. Cadastrar novo Paciente com suporte completo aos dados Pessoais, Clínicos e Hábitos
 export async function createPaciente(pacienteData, nutricionistaId) {
   const sql = getSql();
   if (!sql) throw new Error('Conexão com o banco Neon indisponível.');
@@ -250,26 +250,52 @@ export async function createPaciente(pacienteData, nutricionistaId) {
     INSERT INTO public.pacientes (
       nutricionista_id,
       nome,
-      email,
-      telefone,
-      whatsapp,
       data_nascimento,
       sexo,
+      telefone,
+      whatsapp,
+      email,
       peso_inicial,
       altura,
+      objetivos,
       objetivo_texto,
+      nivel_atividade,
+      patologias,
+      restricoes_alimentares,
+      alergias,
+      medicamentos,
+      suplementos,
+      refeicoes_por_dia,
+      horario_acorda,
+      horario_dorme,
+      litros_agua,
+      atividade_fisica,
+      atividade_fisica_descricao,
       observacoes
     ) VALUES (
       ${nutricionistaId},
       ${pacienteData.nome},
-      ${pacienteData.email || null},
+      ${pacienteData.data_nascimento || null},
+      ${pacienteData.sexo || 'Feminino'},
       ${pacienteData.telefone || null},
       ${pacienteData.whatsapp || null},
-      ${pacienteData.data_nascimento || null},
-      ${pacienteData.sexo || 'Não informado'},
+      ${pacienteData.email || null},
       ${pacienteData.peso_inicial ? Number(pacienteData.peso_inicial) : null},
       ${pacienteData.altura ? Number(pacienteData.altura) : null},
+      ${pacienteData.objetivos && pacienteData.objetivos.length > 0 ? pacienteData.objetivos : null},
       ${pacienteData.objetivo_texto || null},
+      ${pacienteData.nivel_atividade || null},
+      ${pacienteData.patologias && pacienteData.patologias.length > 0 ? pacienteData.patologias : null},
+      ${pacienteData.restricoes_alimentares && pacienteData.restricoes_alimentares.length > 0 ? pacienteData.restricoes_alimentares : null},
+      ${pacienteData.alergias && pacienteData.alergias.length > 0 ? pacienteData.alergias : null},
+      ${pacienteData.medicamentos || null},
+      ${pacienteData.suplementos || null},
+      ${pacienteData.refeicoes_por_dia ? parseInt(pacienteData.refeicoes_por_dia, 10) : null},
+      ${pacienteData.horario_acorda || null},
+      ${pacienteData.horario_dorme || null},
+      ${pacienteData.litros_agua ? Number(pacienteData.litros_agua) : null},
+      ${typeof pacienteData.atividade_fisica === 'boolean' ? pacienteData.atividade_fisica : false},
+      ${pacienteData.atividade_fisica_descricao || null},
       ${pacienteData.observacoes || null}
     )
     RETURNING *

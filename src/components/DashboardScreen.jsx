@@ -15,24 +15,24 @@ import {
   Database, 
   RefreshCw, 
   Sparkles, 
-  X, 
   CalendarCheck, 
   CheckCircle2, 
-  Weight, 
-  Ruler, 
-  Activity,
-  Leaf
+  Leaf,
+  CalendarDays
 } from 'lucide-react';
 import { 
   fetchDashboardData, 
   clearActiveSession, 
-  seedDemoData, 
-  createPaciente,
-  fetchPacienteDetalhes 
+  seedDemoData 
 } from '../lib/neonClient';
+import PatientFormScreen from './PatientFormScreen';
+import PatientProfileScreen from './PatientProfileScreen';
 
 export default function DashboardScreen({ user, onLogout }) {
-  const [activeTab, setActiveTab] = useState('dashboard'); // 'dashboard' | 'pacientes'
+  // Views: 'dashboard' | 'pacientes' | 'novo-paciente' | 'perfil-paciente'
+  const [currentView, setCurrentView] = useState('dashboard');
+  const [selectedPatientId, setSelectedPatientId] = useState(null);
+  
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [dashboardData, setDashboardData] = useState({
@@ -42,25 +42,8 @@ export default function DashboardScreen({ user, onLogout }) {
     pacientes: []
   });
 
-  // Modals
-  const [selectedPatient, setSelectedPatient] = useState(null);
-  const [patientDetails, setPatientDetails] = useState(null);
-  const [loadingDetails, setLoadingDetails] = useState(false);
-  const [isNewPatientModalOpen, setIsNewPatientModalOpen] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');
-  const [newPatientForm, setNewPatientForm] = useState({
-    nome: '',
-    email: '',
-    telefone: '',
-    whatsapp: '',
-    data_nascimento: '',
-    sexo: 'Feminino',
-    peso_inicial: '',
-    altura: '',
-    objetivo_texto: '',
-    observacoes: ''
-  });
-  const [savingPatient, setSavingPatient] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
   const [demoLoading, setDemoLoading] = useState(false);
 
   const displayName = user?.nome || 'Nutricionista';
@@ -72,6 +55,14 @@ export default function DashboardScreen({ user, onLogout }) {
     .join('')
     .substring(0, 2)
     .toUpperCase();
+
+  // Exibir Toast temporário
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage('');
+    }, 4000);
+  };
 
   // Carregar dados em tempo real do Neon
   const loadData = async (showSpinner = true) => {
@@ -102,46 +93,20 @@ export default function DashboardScreen({ user, onLogout }) {
   };
 
   // Abrir Perfil do Paciente
-  const handleOpenPatientProfile = async (patient) => {
-    setSelectedPatient(patient);
-    setLoadingDetails(true);
-    try {
-      const details = await fetchPacienteDetalhes(patient.id, user.id);
-      setPatientDetails(details);
-    } catch (err) {
-      console.error('Erro ao buscar detalhes:', err);
-      setPatientDetails({ paciente: patient, consultas: [] });
-    } finally {
-      setLoadingDetails(false);
-    }
+  const handleOpenPatientProfile = (patientId) => {
+    setSelectedPatientId(patientId);
+    setCurrentView('perfil-paciente');
   };
 
-  // Cadastrar Novo Paciente
-  const handleCreatePatientSubmit = async (e) => {
-    e.preventDefault();
-    if (!newPatientForm.nome.trim()) return;
-
-    setSavingPatient(true);
-    try {
-      await createPaciente(newPatientForm, user.id);
-      setIsNewPatientModalOpen(false);
-      setNewPatientForm({
-        nome: '',
-        email: '',
-        telefone: '',
-        whatsapp: '',
-        data_nascimento: '',
-        sexo: 'Feminino',
-        peso_inicial: '',
-        altura: '',
-        objetivo_texto: '',
-        observacoes: ''
-      });
-      await loadData(false);
-    } catch (err) {
-      alert('Erro ao cadastrar paciente: ' + (err.message || 'Verifique a conexão'));
-    } finally {
-      setSavingPatient(false);
+  // Callback de sucesso ao cadastrar paciente
+  const handlePatientSaved = (newPatient) => {
+    showToast('Paciente cadastrado com sucesso!');
+    loadData(false);
+    if (newPatient?.id) {
+      setSelectedPatientId(newPatient.id);
+      setCurrentView('perfil-paciente');
+    } else {
+      setCurrentView('pacientes');
     }
   };
 
@@ -150,6 +115,7 @@ export default function DashboardScreen({ user, onLogout }) {
     setDemoLoading(true);
     try {
       await seedDemoData(user.id);
+      showToast('Dados de teste inseridos com sucesso no Neon!');
       await loadData(false);
     } catch (err) {
       alert('Erro ao gerar dados de teste: ' + err.message);
@@ -160,12 +126,21 @@ export default function DashboardScreen({ user, onLogout }) {
 
   const filteredPacientes = dashboardData.pacientes.filter((p) =>
     p.nome?.toLowerCase().includes(patientSearch.toLowerCase()) ||
-    p.email?.toLowerCase().includes(patientSearch.toLowerCase()) ||
-    p.telefone?.includes(patientSearch)
+    (p.email && p.email.toLowerCase().includes(patientSearch.toLowerCase())) ||
+    (p.telefone && p.telefone.includes(patientSearch)) ||
+    (p.objetivo_texto && p.objetivo_texto.toLowerCase().includes(patientSearch.toLowerCase()))
   );
 
   return (
     <div className="dashboard-app-layout">
+      {/* Toast de Sucesso */}
+      {toastMessage && (
+        <div className="toast-success">
+          <CheckCircle2 size={20} />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* Menu Lateral Fixo com Logo "Nutri lucas " */}
       <aside className="sidebar-fixed">
         <div className="sidebar-brand">
@@ -180,16 +155,22 @@ export default function DashboardScreen({ user, onLogout }) {
         {/* Navegação */}
         <nav className="sidebar-nav">
           <button
-            className={`nav-item ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setActiveTab('dashboard')}
+            className={`nav-item ${currentView === 'dashboard' ? 'active' : ''}`}
+            onClick={() => {
+              setCurrentView('dashboard');
+              setSelectedPatientId(null);
+            }}
           >
             <LayoutDashboard size={18} />
             <span>Dashboard</span>
           </button>
 
           <button
-            className={`nav-item ${activeTab === 'pacientes' ? 'active' : ''}`}
-            onClick={() => setActiveTab('pacientes')}
+            className={`nav-item ${currentView === 'pacientes' || currentView === 'novo-paciente' || currentView === 'perfil-paciente' ? 'active' : ''}`}
+            onClick={() => {
+              setCurrentView('pacientes');
+              setSelectedPatientId(null);
+            }}
           >
             <Users size={18} />
             <span>Pacientes</span>
@@ -220,42 +201,40 @@ export default function DashboardScreen({ user, onLogout }) {
 
       {/* Área Principal de Conteúdo */}
       <main className="main-content-area">
-        {/* Top Header */}
-        <div className="dashboard-top-bar">
-          <div className="dashboard-heading">
-            <h1>{activeTab === 'dashboard' ? 'Dashboard Principal' : 'Gestão de Pacientes'}</h1>
-            <p>
-              {activeTab === 'dashboard'
-                ? `Olá, ${displayName}. Acompanhe os indicadores em tempo real sincronizados com o Neon.`
-                : 'Gerencie o cadastro, histórico e consultas dos seus pacientes.'}
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <button
-              className="btn-icon-secondary"
-              onClick={() => loadData(false)}
-              disabled={refreshing || loading}
-              title="Atualizar dados do Neon"
-            >
-              <RefreshCw size={14} className={refreshing ? 'spinner' : ''} />
-              {refreshing ? 'Atualizando...' : 'Atualizar'}
-            </button>
-
-            <button
-              className="btn-primary"
-              style={{ width: 'auto', padding: '0 18px', height: '40px', fontSize: '13px' }}
-              onClick={() => setIsNewPatientModalOpen(true)}
-            >
-              <Plus size={16} />
-              <span>Novo Paciente</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Seção 1: Visualização do Dashboard */}
-        {activeTab === 'dashboard' && (
+        {/* ========================================================================= */}
+        {/* VIEW 1: DASHBOARD PRINCIPAL (Prompt 3) */}
+        {/* ========================================================================= */}
+        {currentView === 'dashboard' && (
           <div>
+            {/* Top Bar */}
+            <div className="dashboard-top-bar">
+              <div className="dashboard-heading">
+                <h1>Dashboard Principal</h1>
+                <p>Olá, {displayName}. Acompanhe os indicadores em tempo real sincronizados com o Neon.</p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button
+                  className="btn-icon-secondary"
+                  onClick={() => loadData(false)}
+                  disabled={refreshing || loading}
+                  title="Atualizar dados do Neon"
+                >
+                  <RefreshCw size={14} className={refreshing ? 'spinner' : ''} />
+                  {refreshing ? 'Atualizando...' : 'Atualizar'}
+                </button>
+
+                <button
+                  className="btn-primary"
+                  style={{ width: 'auto', padding: '0 18px', height: '40px', fontSize: '13px' }}
+                  onClick={() => setCurrentView('novo-paciente')}
+                >
+                  <Plus size={16} />
+                  <span>Novo Paciente</span>
+                </button>
+              </div>
+            </div>
+
             {loading ? (
               <div style={{ textAlign: 'center', padding: '80px 0' }}>
                 <div className="spinner" style={{ width: '36px', height: '36px', margin: '0 auto 16px auto', borderTopColor: 'var(--primary)' }}></div>
@@ -263,8 +242,6 @@ export default function DashboardScreen({ user, onLogout }) {
               </div>
             ) : (
               <>
-                {/* 3 Cards de Informação Principais */}
-                
                 {/* Grid dos Cards 1 e 2 */}
                 <div className="dashboard-cards-grid">
                   {/* Card 1 — Total de pacientes ativos */}
@@ -344,7 +321,7 @@ export default function DashboardScreen({ user, onLogout }) {
                         <div
                           key={paciente.id}
                           className="sem-retorno-item"
-                          onClick={() => handleOpenPatientProfile(paciente)}
+                          onClick={() => handleOpenPatientProfile(paciente.id)}
                           title="Clique para ver o perfil completo do paciente"
                         >
                           <div>
@@ -379,7 +356,7 @@ export default function DashboardScreen({ user, onLogout }) {
                               style={{ padding: '6px 12px', fontSize: '12px' }}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleOpenPatientProfile(paciente);
+                                handleOpenPatientProfile(paciente.id);
                               }}
                             >
                               Ver Perfil
@@ -430,322 +407,179 @@ export default function DashboardScreen({ user, onLogout }) {
           </div>
         )}
 
-        {/* Seção 2: Visualização da Lista de Pacientes */}
-        {activeTab === 'pacientes' && (
-          <div>
-            {/* Barra de Pesquisa e Filtros */}
-            <div style={{ display: 'flex', gap: '12px', marginBottom: '20px' }}>
-              <div style={{ position: 'relative', flex: 1 }}>
-                <Search size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+        {/* ========================================================================= */}
+        {/* VIEW 2: LISTAGEM DE PACIENTES (Prompt 4) */}
+        {/* ========================================================================= */}
+        {currentView === 'pacientes' && (
+          <div style={{ animation: 'fadeIn 0.2s ease' }}>
+            <div className="dashboard-top-bar">
+              <div className="dashboard-heading">
+                <h1>Pacientes</h1>
+                <p>Todos os pacientes cadastrados pela nutricionista logada no Neon.</p>
+              </div>
+
+              <button
+                className="btn-primary"
+                style={{ width: 'auto', padding: '0 20px', height: '42px', fontSize: '13px' }}
+                onClick={() => setCurrentView('novo-paciente')}
+              >
+                <Plus size={16} />
+                <span>Novo Paciente</span>
+              </button>
+            </div>
+
+            {/* Campo de Busca no Topo */}
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ position: 'relative', width: '100%', maxWidth: '450px' }}>
+                <Search
+                  size={18}
+                  style={{
+                    position: 'absolute',
+                    left: '14px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    color: 'var(--text-muted)',
+                  }}
+                />
                 <input
                   type="text"
-                  placeholder="Pesquisar paciente por nome, email ou telefone..."
+                  placeholder="Buscar paciente por nome..."
                   value={patientSearch}
                   onChange={(e) => setPatientSearch(e.target.value)}
                   className="form-input"
-                  style={{ paddingLeft: '42px', height: '46px' }}
+                  style={{ paddingLeft: '42px', height: '44px' }}
                 />
               </div>
             </div>
 
-            {/* Tabela de Pacientes */}
-            <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--radius-xl)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
-              {filteredPacientes.length === 0 ? (
-                <div className="empty-state-box" style={{ margin: '30px' }}>
-                  <div className="empty-state-icon">
-                    <Users size={26} />
-                  </div>
-                  <div className="empty-state-text">Nenhum paciente encontrado</div>
-                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                    Clique no botão "Novo Paciente" para cadastrar o primeiro.
-                  </p>
+            {/* Listagem de Pacientes ou Mensagem Vazia */}
+            {dashboardData.pacientes.length === 0 ? (
+              <div className="empty-state-box" style={{ padding: '60px 20px' }}>
+                <div className="empty-state-icon">
+                  <Users size={30} />
                 </div>
-              ) : (
+                <div className="empty-state-text" style={{ fontSize: '17px', fontWeight: '800' }}>
+                  Nenhum paciente cadastrado ainda
+                </div>
+                <p style={{ fontSize: '14px', color: 'var(--text-muted)', marginTop: '6px', maxWidth: '400px', margin: '6px auto 20px auto' }}>
+                  Comece agora cadastrando seu primeiro paciente com anamnese completa em 3 abas.
+                </p>
+                <button
+                  className="btn-primary"
+                  style={{ width: 'auto', margin: '0 auto' }}
+                  onClick={() => setCurrentView('novo-paciente')}
+                >
+                  <Plus size={16} /> Cadastrar Primeiro Paciente
+                </button>
+              </div>
+            ) : filteredPacientes.length === 0 ? (
+              <div className="empty-state-box">
+                <p style={{ color: 'var(--text-muted)' }}>Nenhum paciente encontrado com o nome "{patientSearch}".</p>
+              </div>
+            ) : (
+              <div style={{ background: '#ffffff', border: '1px solid var(--border)', borderRadius: 'var(--radius-xl)', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
                   <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase' }}>
-                      <th style={{ padding: '16px 20px' }}>Nome do Paciente</th>
-                      <th style={{ padding: '16px 20px' }}>Contato</th>
-                      <th style={{ padding: '16px 20px' }}>Objetivo</th>
-                      <th style={{ padding: '16px 20px' }}>Última Consulta</th>
-                      <th style={{ padding: '16px 20px', textAlign: 'right' }}>Ação</th>
+                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      <th style={{ padding: '16px 24px' }}>Nome do Paciente</th>
+                      <th style={{ padding: '16px 24px' }}>Objetivo</th>
+                      <th style={{ padding: '16px 24px' }}>Data da Última Consulta</th>
+                      <th style={{ padding: '16px 24px', textAlign: 'right' }}>Ação</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredPacientes.map((paciente) => (
-                      <tr
-                        key={paciente.id}
-                        style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer', transition: 'background 0.15s' }}
-                        onClick={() => handleOpenPatientProfile(paciente)}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = '#f8fafc')}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        <td style={{ padding: '16px 20px' }}>
-                          <strong style={{ color: 'var(--text-main)' }}>{paciente.nome}</strong>
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{paciente.sexo || 'Não informado'}</div>
-                        </td>
-                        <td style={{ padding: '16px 20px' }}>
-                          <div>{paciente.telefone || 'Sem telefone'}</div>
-                          <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{paciente.email || '-'}</div>
-                        </td>
-                        <td style={{ padding: '16px 20px' }}>
-                          <span style={{ fontSize: '13px', color: 'var(--text-main)' }}>
-                            {paciente.objetivo_texto || 'Avaliação nutricional'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '16px 20px' }}>
-                          {paciente.ultima_consulta_data ? (
-                            <span style={{ fontSize: '13px', fontWeight: '600', color: 'var(--primary)' }}>
-                              {new Date(paciente.ultima_consulta_data).toLocaleDateString('pt-BR')}
+                    {filteredPacientes.map((paciente) => {
+                      const objetivosList = paciente.objetivos?.length > 0
+                        ? paciente.objetivos.join(', ')
+                        : paciente.objetivo_texto || 'Reeducação alimentar';
+
+                      return (
+                        <tr
+                          key={paciente.id}
+                          style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer', transition: 'background 0.15s' }}
+                          onClick={() => handleOpenPatientProfile(paciente.id)}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = '#f8fafc')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          {/* Nome */}
+                          <td style={{ padding: '18px 24px' }}>
+                            <div style={{ fontWeight: '700', color: 'var(--text-main)', fontSize: '15px' }}>
+                              {paciente.nome}
+                            </div>
+                            <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                              {paciente.telefone || paciente.email || 'Sem contato'}
+                            </div>
+                          </td>
+
+                          {/* Objetivo */}
+                          <td style={{ padding: '18px 24px' }}>
+                            <span style={{ fontSize: '13px', color: 'var(--text-main)', fontWeight: '500' }}>
+                              {objetivosList}
                             </span>
-                          ) : (
-                            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Sem consultas</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '16px 20px', textAlign: 'right' }}>
-                          <button
-                            className="btn-icon-secondary"
-                            style={{ padding: '6px 12px', fontSize: '12px' }}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenPatientProfile(paciente);
-                            }}
-                          >
-                            Ver Perfil
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+
+                          {/* Data da Última Consulta */}
+                          <td style={{ padding: '18px 24px' }}>
+                            {paciente.ultima_consulta_data ? (
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: '600', color: 'var(--primary)' }}>
+                                <CalendarDays size={14} />
+                                {new Date(paciente.ultima_consulta_data).toLocaleDateString('pt-BR')}
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                                Nenhuma consulta realizada
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Ação */}
+                          <td style={{ padding: '18px 24px', textAlign: 'right' }}>
+                            <button
+                              className="btn-icon-secondary"
+                              style={{ padding: '6px 14px', fontSize: '12px' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenPatientProfile(paciente.id);
+                              }}
+                            >
+                              Ver Perfil <ChevronRight size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 3: FORMULÁRIO DE CADASTRO COM 3 ABAS (Prompt 4) */}
+        {/* ========================================================================= */}
+        {currentView === 'novo-paciente' && (
+          <PatientFormScreen
+            user={user}
+            onCancel={() => setCurrentView('pacientes')}
+            onSaveSuccess={handlePatientSaved}
+          />
+        )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 4: PERFIL COMPLETO DO PACIENTE (Prompt 4) */}
+        {/* ========================================================================= */}
+        {currentView === 'perfil-paciente' && selectedPatientId && (
+          <PatientProfileScreen
+            patientId={selectedPatientId}
+            user={user}
+            onBack={() => {
+              setCurrentView('pacientes');
+              setSelectedPatientId(null);
+            }}
+          />
+        )}
       </main>
-
-      {/* Modal: Perfil do Paciente (quando clicado no Card 3 ou na lista) */}
-      {selectedPatient && (
-        <div className="modal-overlay" onClick={() => setSelectedPatient(null)}>
-          <div
-            className="modal-content"
-            style={{ maxWidth: '640px' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="modal-header">
-              <div className="modal-title">
-                <UserCheck size={22} style={{ color: 'var(--primary)' }} />
-                <span>Perfil do Paciente</span>
-              </div>
-              <button className="btn-close" onClick={() => setSelectedPatient(null)}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', background: 'var(--primary-light)', borderRadius: 'var(--radius-md)', marginBottom: '20px' }}>
-              <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'var(--primary)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '800', fontSize: '18px' }}>
-                {selectedPatient.nome?.substring(0, 2).toUpperCase()}
-              </div>
-              <div>
-                <h3 style={{ fontSize: '18px', fontWeight: '800', color: 'var(--text-main)' }}>{selectedPatient.nome}</h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>{selectedPatient.email || 'Sem e-mail cadastrado'}</p>
-              </div>
-            </div>
-
-            {loadingDetails ? (
-              <div style={{ textAlign: 'center', padding: '30px' }}>
-                <div className="spinner" style={{ width: '28px', height: '28px', margin: '0 auto', borderTopColor: 'var(--primary)' }}></div>
-              </div>
-            ) : (
-              <>
-                <div className="patient-detail-grid">
-                  <div className="patient-info-box">
-                    <div className="patient-info-lbl">Telefone / WhatsApp</div>
-                    <div className="patient-info-val">{selectedPatient.telefone || selectedPatient.whatsapp || 'Não informado'}</div>
-                  </div>
-
-                  <div className="patient-info-box">
-                    <div className="patient-info-lbl">Sexo</div>
-                    <div className="patient-info-val">{selectedPatient.sexo || 'Não informado'}</div>
-                  </div>
-
-                  <div className="patient-info-box">
-                    <div className="patient-info-lbl">Peso Inicial</div>
-                    <div className="patient-info-val">{selectedPatient.peso_inicial ? `${selectedPatient.peso_inicial} kg` : 'Não registrado'}</div>
-                  </div>
-
-                  <div className="patient-info-box">
-                    <div className="patient-info-lbl">Altura</div>
-                    <div className="patient-info-val">{selectedPatient.altura ? `${selectedPatient.altura} m` : 'Não registrada'}</div>
-                  </div>
-                </div>
-
-                <div className="patient-info-box" style={{ marginBottom: '20px' }}>
-                  <div className="patient-info-lbl">Objetivo Principal</div>
-                  <div className="patient-info-val" style={{ color: 'var(--primary)', fontWeight: '700' }}>
-                    {selectedPatient.objetivo_texto || 'Reeducação alimentar & saúde'}
-                  </div>
-                </div>
-
-                {/* Histórico de Consultas */}
-                <h4 style={{ fontSize: '15px', fontWeight: '800', marginBottom: '10px' }}>Histórico de Consultas</h4>
-                {patientDetails?.consultas?.length === 0 ? (
-                  <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>Nenhuma consulta registrada para este paciente ainda.</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
-                    {patientDetails?.consultas?.map((c) => (
-                      <div
-                        key={c.id}
-                        style={{
-                          padding: '10px 14px',
-                          background: '#f8fafc',
-                          borderRadius: 'var(--radius-sm)',
-                          border: '1px solid var(--border)',
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          fontSize: '13px',
-                        }}
-                      >
-                        <div>
-                          <strong>Data: {new Date(c.data_consulta).toLocaleDateString('pt-BR')}</strong>
-                          {c.peso && <span style={{ marginLeft: '10px', color: 'var(--text-muted)' }}>• Peso: {c.peso} kg</span>}
-                        </div>
-                        <div>
-                          {c.proximo_retorno ? (
-                            <span style={{ color: 'var(--primary)', fontWeight: '600' }}>
-                              Retorno: {new Date(c.proximo_retorno).toLocaleDateString('pt-BR')}
-                            </span>
-                          ) : (
-                            <span style={{ color: '#d97706', fontWeight: '600' }}>Sem retorno</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-
-            <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
-              <button className="btn-primary" style={{ width: 'auto' }} onClick={() => setSelectedPatient(null)}>
-                Fechar Perfil
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Cadastrar Novo Paciente */}
-      {isNewPatientModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsNewPatientModalOpen(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="modal-title">
-                <Plus size={20} style={{ color: 'var(--primary)' }} />
-                <span>Novo Paciente</span>
-              </div>
-              <button className="btn-close" onClick={() => setIsNewPatientModalOpen(false)}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreatePatientSubmit}>
-              <div className="form-group">
-                <label className="form-label">Nome Completo *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: João da Silva"
-                  value={newPatientForm.nome}
-                  onChange={(e) => setNewPatientForm({ ...newPatientForm, nome: e.target.value })}
-                  className="form-input"
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div className="form-group">
-                  <label className="form-label">E-mail</label>
-                  <input
-                    type="email"
-                    placeholder="paciente@email.com"
-                    value={newPatientForm.email}
-                    onChange={(e) => setNewPatientForm({ ...newPatientForm, email: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Telefone / Celular</label>
-                  <input
-                    type="text"
-                    placeholder="(11) 99999-9999"
-                    value={newPatientForm.telefone}
-                    onChange={(e) => setNewPatientForm({ ...newPatientForm, telefone: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div className="form-group">
-                  <label className="form-label">Peso Inicial (kg)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="Ex: 75.5"
-                    value={newPatientForm.peso_inicial}
-                    onChange={(e) => setNewPatientForm({ ...newPatientForm, peso_inicial: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Altura (m)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="Ex: 1.72"
-                    value={newPatientForm.altura}
-                    onChange={(e) => setNewPatientForm({ ...newPatientForm, altura: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Objetivo Principal</label>
-                <input
-                  type="text"
-                  placeholder="Ex: Emagrecimento, Hipertrofia, Reeducação"
-                  value={newPatientForm.objetivo_texto}
-                  onChange={(e) => setNewPatientForm({ ...newPatientForm, objetivo_texto: e.target.value })}
-                  className="form-input"
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: '12px', marginTop: '20px' }}>
-                <button
-                  type="button"
-                  className="btn-icon-secondary"
-                  style={{ flex: 1, justifyContent: 'center' }}
-                  onClick={() => setIsNewPatientModalOpen(false)}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  style={{ flex: 2 }}
-                  disabled={savingPatient}
-                >
-                  {savingPatient ? 'Salvando no Neon...' : 'Cadastrar Paciente'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
