@@ -28,9 +28,10 @@ import {
 } from '../lib/neonClient';
 import PatientFormScreen from './PatientFormScreen';
 import PatientProfileScreen from './PatientProfileScreen';
+import ScheduleScreen from './ScheduleScreen';
 
 export default function DashboardScreen({ user, onLogout }) {
-  // Views: 'dashboard' | 'pacientes' | 'novo-paciente' | 'perfil-paciente'
+  // Views: 'dashboard' | 'pacientes' | 'agenda' | 'novo-paciente' | 'perfil-paciente'
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedPatientId, setSelectedPatientId] = useState(null);
   
@@ -353,7 +354,16 @@ export default function DashboardScreen({ user, onLogout }) {
             <LayoutDashboard size={18} />
             <span>Dashboard</span>
           </button>
-
+          <button
+            className={`nav-item ${currentView === 'agenda' ? 'active' : ''}`}
+            onClick={() => {
+              setCurrentView('agenda');
+              setSelectedPatientId(null);
+            }}
+          >
+            <Calendar size={18} />
+            <span>Agenda</span>
+          </button>
           <button
             className={`nav-item ${currentView === 'pacientes' || currentView === 'novo-paciente' || currentView === 'perfil-paciente' ? 'active' : ''}`}
             onClick={() => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   User, 
   ArrowLeft, 
@@ -18,7 +18,9 @@ import {
   TrendingUp,
   AlertCircle,
   Check,
-  Eye
+  Eye,
+  Camera,
+  Smartphone
 } from 'lucide-react';
 import { 
   fetchPacienteDetalhes, 
@@ -27,6 +29,9 @@ import {
   deleteConsulta,
   deletePaciente
 } from '../lib/neonClient';
+import MealPlanGeneratorModal from './MealPlanGeneratorModal';
+import EvolutionGalleryTab from './EvolutionGalleryTab';
+import PatientPortalView from './PatientPortalView';
 
 // Opções pré-definidas para edição dos dados clínicos
 const OBJETIVOS_OPCOES = [
@@ -188,8 +193,11 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const [deletingPatient, setDeletingPatient] = useState(false);
 
-  // Modal Informativo: Gerar Plano Alimentar (Prompt 6 preview)
-  const [isGerarPlanoModalOpen, setIsGerarPlanoModalOpen] = useState(false);
+  // Modal: Gerador Inteligente de Plano Alimentar com IA
+  const [isGeneratorOpen, setIsGeneratorOpen] = useState(false);
+
+  // Modo: Portal do Paciente
+  const [isPortalViewOpen, setIsPortalViewOpen] = useState(false);
 
   // Hover state para o gráfico de evolução
   const [chartHoverPoint, setChartHoverPoint] = useState(null);
@@ -542,6 +550,16 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
     ? new Date(patientData.data_inicio_tratamento).toLocaleDateString('pt-BR') 
     : (patientData.created_at ? new Date(patientData.created_at).toLocaleDateString('pt-BR') : 'Não informada');
 
+  // Modo: Portal do Paciente
+  if (isPortalViewOpen) {
+    return (
+      <PatientPortalView
+        patient={patientData}
+        onBack={() => setIsPortalViewOpen(false)}
+      />
+    );
+  }
+
   return (
     <div style={{ animation: 'fadeIn 0.25s ease' }}>
       {/* Toast Feedback */}
@@ -624,6 +642,15 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <button
               className="btn-icon-secondary"
+              style={{ color: '#0284c7', borderColor: '#bae6fd', background: '#f0f9ff', height: '40px', padding: '0 14px' }}
+              onClick={() => setIsPortalViewOpen(true)}
+              title="Abrir Visão do Portal do Paciente"
+            >
+              <Smartphone size={15} /> Portal do Paciente
+            </button>
+
+            <button
+              className="btn-icon-secondary"
               style={{ color: '#16a34a', borderColor: '#bbf7d0', background: '#f0fdf4', height: '40px', padding: '0 14px' }}
               onClick={() => handleOpenWhatsApp('retorno')}
               title="Abrir conversa no WhatsApp"
@@ -655,14 +682,14 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. NAVEGAÇÃO ENTRE AS 3 GRANDES SEÇÕES */}
+      {/* 2. NAVEGAÇÃO ENTRE AS 4 GRANDES SEÇÕES */}
       {/* ========================================================================= */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '12px', flexWrap: 'wrap' }}>
         {/* Seção 2: Consultas e Evolução (Destaque Principal) */}
         <button
           className={`chip-select-btn ${activeTab === 'evolucao' ? 'selected' : ''}`}
           onClick={() => setActiveTab('evolucao')}
-          style={{ fontSize: '14px', padding: '10px 20px' }}
+          style={{ fontSize: '14px', padding: '10px 18px' }}
         >
           <Activity size={16} /> Consultas e Evolução ({consultas.length})
         </button>
@@ -671,7 +698,7 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
         <button
           className={`chip-select-btn ${activeTab === 'dados' ? 'selected' : ''}`}
           onClick={() => setActiveTab('dados')}
-          style={{ fontSize: '14px', padding: '10px 20px' }}
+          style={{ fontSize: '14px', padding: '10px 18px' }}
         >
           <User size={16} /> Dados do Paciente
         </button>
@@ -680,9 +707,18 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
         <button
           className={`chip-select-btn ${activeTab === 'planos' ? 'selected' : ''}`}
           onClick={() => setActiveTab('planos')}
-          style={{ fontSize: '14px', padding: '10px 20px' }}
+          style={{ fontSize: '14px', padding: '10px 18px' }}
         >
           <Utensils size={16} /> Planos Alimentares ({planos.length})
+        </button>
+
+        {/* Seção 4: Galeria de Fotos e Transformação */}
+        <button
+          className={`chip-select-btn ${activeTab === 'fotos' ? 'selected' : ''}`}
+          onClick={() => setActiveTab('fotos')}
+          style={{ fontSize: '14px', padding: '10px 18px' }}
+        >
+          <Camera size={16} /> Galeria & Antes/Depois
         </button>
       </div>
 
@@ -1689,7 +1725,7 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
               <button
                 className="btn-primary"
                 style={{ width: 'auto', margin: '0 auto' }}
-                onClick={() => setIsGerarPlanoModalOpen(true)}
+                onClick={() => setIsGeneratorOpen(true)}
               >
                 <Sparkles size={15} /> Gerar Primeiro Plano
               </button>
@@ -1702,7 +1738,6 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
                 const proteinas = plano.conteudo?.proteinas || '130';
                 const carbo = plano.conteudo?.carboidratos || '180';
                 const gorduras = plano.conteudo?.gorduras || '55';
-                const totalRefeicoes = Array.isArray(plano.conteudo?.refeicoes) ? plano.conteudo.refeicoes.length : 6;
                 const dataGeracao = new Date(plano.created_at).toLocaleDateString('pt-BR');
 
                 return (
@@ -1712,7 +1747,7 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
                       background: '#ffffff',
                       border: '1px solid var(--border)',
                       borderRadius: 'var(--radius-xl)',
-                      padding: '22px',
+                      padding: '24px',
                       boxShadow: 'var(--shadow-sm)',
                       display: 'flex',
                       flexDirection: 'column',
@@ -1721,16 +1756,16 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
                     }}
                   >
                     <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                        <span style={{ fontSize: '11px', fontWeight: '800', background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', padding: '3px 10px', borderRadius: '12px' }}>
-                          ● Salvo no Neon
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '11px', fontWeight: '800', color: 'var(--primary)', background: 'var(--primary-light)', padding: '4px 10px', borderRadius: '12px' }}>
+                          ● Ativo no Neon
                         </span>
-                        <span style={{ fontSize: '12px', color: 'var(--text-muted)', fontWeight: '600' }}>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
                           {dataGeracao}
                         </span>
                       </div>
 
-                      <h3 style={{ fontSize: '17px', fontWeight: '900', color: 'var(--text-main)', marginBottom: '8px' }}>
+                      <h3 style={{ fontSize: '16px', fontWeight: '900', color: 'var(--text-main)', marginBottom: '12px' }}>
                         {titulo}
                       </h3>
 
@@ -1753,10 +1788,6 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
                           <strong>{gorduras}g</strong>
                         </div>
                       </div>
-
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '10px' }}>
-                        Contém <strong>{totalRefeicoes} refeições estruturadas</strong> com horários e opções.
-                      </div>
                     </div>
 
                     <div style={{ display: 'flex', gap: '10px' }}>
@@ -1769,7 +1800,7 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
                           setIsPlanoModalOpen(true);
                         }}
                       >
-                        <Eye size={15} /> Visualizar Plano
+                        <Eye size={15} /> Visualizar
                       </button>
                     </div>
                   </div>
@@ -1778,6 +1809,17 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
             </div>
           )}
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SEÇÃO 4: GALERIA DE EVOLUÇÃO & ANTES/DEPOIS */}
+      {/* ========================================================================= */}
+      {activeTab === 'fotos' && (
+        <EvolutionGalleryTab
+          patientId={patientId}
+          currentWeight={weightStats?.currentWeight}
+          initialWeight={weightStats?.initialWeight}
+        />
       )}
 
       {/* ========================================================================= */}
@@ -1805,7 +1847,6 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
 
             <form onSubmit={handleCreateConsultaSubmit}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '14px' }}>
-                {/* Data da Consulta (Obrigatório) */}
                 <div className="form-group">
                   <label className="form-label">
                     Data da Consulta <span style={{ color: 'var(--danger)' }}>*</span>
@@ -1819,7 +1860,6 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
                   />
                 </div>
 
-                {/* Próximo Retorno (Opcional) */}
                 <div className="form-group">
                   <label className="form-label">Próximo Retorno (opcional)</label>
                   <input
@@ -1831,31 +1871,54 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
                 </div>
               </div>
 
-              {/* Medidas: Peso, Cintura, Quadril, % Gordura */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '14px' }}>
-                {/* Peso Atual (Obrigatório) */}
+              {/* Peso Atual (Obrigatório) */}
+              <div className="form-group" style={{ marginBottom: '14px' }}>
+                <label className="form-label">
+                  Peso Atual (kg) <span style={{ color: 'var(--danger)' }}>*</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  required
+                  placeholder="Ex: 68.5"
+                  value={consultaForm.peso}
+                  onChange={(e) => setConsultaForm({ ...consultaForm, peso: e.target.value })}
+                  className="form-input"
+                />
+              </div>
+
+              {/* Medidas Antropométricas Opcionais */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '14px' }}>
                 <div className="form-group">
-                  <label className="form-label">
-                    Peso atual (kg) <span style={{ color: 'var(--danger)' }}>*</span>
-                  </label>
+                  <label className="form-label">Cintura (cm)</label>
                   <input
                     type="number"
-                    step="0.1"
-                    required
-                    placeholder="Ex: 68.5"
-                    value={consultaForm.peso}
-                    onChange={(e) => setConsultaForm({ ...consultaForm, peso: e.target.value })}
+                    step="0.5"
+                    placeholder="75"
+                    value={consultaForm.cintura}
+                    onChange={(e) => setConsultaForm({ ...consultaForm, cintura: e.target.value })}
                     className="form-input"
                   />
                 </div>
 
-                {/* % de Gordura (Opcional) */}
                 <div className="form-group">
-                  <label className="form-label">% de gordura (opcional)</label>
+                  <label className="form-label">Quadril (cm)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    placeholder="100"
+                    value={consultaForm.quadril}
+                    onChange={(e) => setConsultaForm({ ...consultaForm, quadril: e.target.value })}
+                    className="form-input"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">% Gordura</label>
                   <input
                     type="number"
                     step="0.1"
-                    placeholder="Ex: 21.5"
+                    placeholder="22.5"
                     value={consultaForm.percentual_gordura}
                     onChange={(e) => setConsultaForm({ ...consultaForm, percentual_gordura: e.target.value })}
                     className="form-input"
@@ -1863,40 +1926,12 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '14px' }}>
-                {/* Cintura (cm, Opcional) */}
-                <div className="form-group">
-                  <label className="form-label">Cintura (cm)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="Ex: 75.0"
-                    value={consultaForm.cintura}
-                    onChange={(e) => setConsultaForm({ ...consultaForm, cintura: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-
-                {/* Quadril (cm, Opcional) */}
-                <div className="form-group">
-                  <label className="form-label">Quadril (cm)</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="Ex: 98.0"
-                    value={consultaForm.quadril}
-                    onChange={(e) => setConsultaForm({ ...consultaForm, quadril: e.target.value })}
-                    className="form-input"
-                  />
-                </div>
-              </div>
-
-              {/* Observações */}
-              <div className="form-group" style={{ marginBottom: '22px' }}>
+              {/* Observações da Consulta */}
+              <div className="form-group" style={{ marginBottom: '20px' }}>
                 <label className="form-label">Observações da Consulta</label>
                 <textarea
                   rows={3}
-                  placeholder="Relato do paciente, alterações no apetite, adesão ao plano, novas metas..."
+                  placeholder="Anotações sobre a evolução, queixas ou exames..."
                   value={consultaForm.observacoes}
                   onChange={(e) => setConsultaForm({ ...consultaForm, observacoes: e.target.value })}
                   className="form-input"
@@ -1928,6 +1963,16 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
           </div>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: GERADOR INTELIGENTE DE PLANOS ALIMENTARES IA */}
+      {/* ========================================================================= */}
+      <MealPlanGeneratorModal
+        patient={patientData}
+        isOpen={isGeneratorOpen}
+        onClose={() => setIsGeneratorOpen(false)}
+        onPlanSaved={() => loadData(false)}
+      />
 
       {/* ========================================================================= */}
       {/* MODAL: VISUALIZAR PLANO ALIMENTAR (Leitura Completa) */}
@@ -2004,35 +2049,6 @@ export default function PatientProfileScreen({ patientId, user, onBack, onDelete
                 Fechar
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* MODAL INFORMATIVO: GERAR PLANO ALIMENTAR (Preparado para o Prompt 6) */}
-      {/* ========================================================================= */}
-      {isGerarPlanoModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsGerarPlanoModalOpen(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', textAlign: 'center' }}>
-            <div style={{ width: '56px', height: '56px', background: '#fef2f2', color: 'var(--primary)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px auto' }}>
-              <Sparkles size={28} />
-            </div>
-
-            <h3 style={{ fontSize: '20px', fontWeight: '900', color: 'var(--text-main)', marginBottom: '8px' }}>
-              Gerador de Plano Alimentar
-            </h3>
-
-            <p style={{ fontSize: '14px', color: 'var(--text-muted)', lineHeight: '1.6', marginBottom: '20px' }}>
-              O botão <strong>"Gerar Plano Alimentar"</strong> foi configurado com sucesso e está visualmente preparado para a próxima etapa (Prompt 6), onde a IA e os cálculos nutricionais automáticos serão integrados.
-            </p>
-
-            <button
-              className="btn-primary"
-              style={{ width: '100%' }}
-              onClick={() => setIsGerarPlanoModalOpen(false)}
-            >
-              Entendido
-            </button>
           </div>
         </div>
       )}

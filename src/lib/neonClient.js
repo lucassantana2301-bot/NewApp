@@ -493,6 +493,202 @@ export async function checkNeonConnection() {
   }
 }
 
+// 14. AGENDAMENTOS / CALENDÁRIO
+export async function fetchAgendamentos(nutricionistaId) {
+  const sql = getSql();
+  if (!sql || !nutricionistaId) return [];
+
+  try {
+    const res = await sql`
+      SELECT 
+        a.*,
+        p.nome as paciente_nome,
+        p.telefone as paciente_telefone,
+        p.whatsapp as paciente_whatsapp,
+        p.email as paciente_email
+      FROM public.agendamentos a
+      JOIN public.pacientes p ON a.paciente_id = p.id
+      WHERE a.nutricionista_id = ${nutricionistaId}
+      ORDER BY a.data_hora ASC
+    `;
+    return res || [];
+  } catch (err) {
+    console.error('Erro ao buscar agendamentos:', err);
+    return [];
+  }
+}
+
+export async function createAgendamento({ nutricionista_id, paciente_id, data_hora, tipo, status, observacoes }) {
+  const sql = getSql();
+  if (!sql) throw new Error('Conexão com o banco Neon indisponível.');
+
+  const res = await sql`
+    INSERT INTO public.agendamentos (
+      nutricionista_id, paciente_id, data_hora, tipo, status, observacoes
+    ) VALUES (
+      ${nutricionista_id}, ${paciente_id}, ${data_hora}, ${tipo || 'Presencial'}, ${status || 'Agendado'}, ${observacoes || null}
+    )
+    RETURNING *
+  `;
+  return res[0];
+}
+
+export async function updateAgendamentoStatus(agendamentoId, status) {
+  const sql = getSql();
+  if (!sql) throw new Error('Conexão com o banco Neon indisponível.');
+
+  const res = await sql`
+    UPDATE public.agendamentos
+    SET status = ${status}
+    WHERE id = ${agendamentoId}
+    RETURNING *
+  `;
+  return res[0];
+}
+
+export async function deleteAgendamento(agendamentoId) {
+  const sql = getSql();
+  if (!sql) throw new Error('Conexão com o banco Neon indisponível.');
+
+  await sql`DELETE FROM public.agendamentos WHERE id = ${agendamentoId}`;
+  return true;
+}
+
+// 15. FOTOS DE EVOLUÇÃO (ANTES E DEPOIS)
+export async function fetchFotosEvolucao(pacienteId) {
+  const sql = getSql();
+  if (!sql || !pacienteId) return [];
+
+  try {
+    const res = await sql`
+      SELECT * FROM public.fotos_evolucao
+      WHERE paciente_id = ${pacienteId}
+      ORDER BY data_foto DESC, created_at DESC
+    `;
+    return res || [];
+  } catch (err) {
+    console.error('Erro ao buscar fotos de evolução:', err);
+    return [];
+  }
+}
+
+export async function createFotoEvolucao({ paciente_id, data_foto, tipo, url_foto, peso_momento, observacoes }) {
+  const sql = getSql();
+  if (!sql) throw new Error('Conexão com o banco Neon indisponível.');
+
+  const res = await sql`
+    INSERT INTO public.fotos_evolucao (
+      paciente_id, data_foto, tipo, url_foto, peso_momento, observacoes
+    ) VALUES (
+      ${paciente_id}, ${data_foto || new Date().toISOString().split('T')[0]}, ${tipo || 'Frente'}, ${url_foto}, ${peso_momento ? Number(peso_momento) : null}, ${observacoes || null}
+    )
+    RETURNING *
+  `;
+  return res[0];
+}
+
+export async function deleteFotoEvolucao(fotoId) {
+  const sql = getSql();
+  if (!sql) throw new Error('Conexão com o banco Neon indisponível.');
+
+  await sql`DELETE FROM public.fotos_evolucao WHERE id = ${fotoId}`;
+  return true;
+}
+
+// 16. REGISTRO DE HÁBITOS E CHECKLIST DO PORTAL DO PACIENTE
+export async function fetchRegistroHabitos(pacienteId, data = new Date().toISOString().split('T')[0]) {
+  const sql = getSql();
+  if (!sql || !pacienteId) return null;
+
+  try {
+    const res = await sql`
+      SELECT * FROM public.registro_habitos
+      WHERE paciente_id = ${pacienteId} AND data = ${data}
+      LIMIT 1
+    `;
+    return res && res.length > 0 ? res[0] : null;
+  } catch (err) {
+    console.error('Erro ao buscar registro de hábitos:', err);
+    return null;
+  }
+}
+
+export async function saveRegistroHabitos(pacienteId, { data, copos_agua, meta_agua_ml, refeicoes_concluidas }) {
+  const sql = getSql();
+  if (!sql || !pacienteId) throw new Error('Conexão com o banco Neon indisponível.');
+
+  const dataAlvo = data || new Date().toISOString().split('T')[0];
+  const refJson = JSON.stringify(refeicoes_concluidas || []);
+
+  const res = await sql`
+    INSERT INTO public.registro_habitos (
+      paciente_id, data, copos_agua, meta_agua_ml, refeicoes_concluidas
+    ) VALUES (
+      ${pacienteId}, ${dataAlvo}, ${copos_agua || 0}, ${meta_agua_ml || 2500}, ${refJson}::jsonb
+    )
+    ON CONFLICT (paciente_id, data) DO UPDATE SET
+      copos_agua = EXCLUDED.copos_agua,
+      meta_agua_ml = EXCLUDED.meta_agua_ml,
+      refeicoes_concluidas = EXCLUDED.refeicoes_concluidas
+    RETURNING *
+  `;
+  return res[0];
+}
+
+// 17. CÁLCULO METABÓLICO CIENTÍFICO (Mifflin-St Jeor & Harris-Benedict)
+export function calculateMetabolicNeeds({ peso, alturaCm, idade, sexo, nivelAtividade, objetivo }) {
+  const p = Number(peso) || 70;
+  const a = Number(alturaCm) || 170;
+  const id = Number(idade) || 30;
+  const isMasc = (sexo || 'Feminino').toLowerCase().startsWith('m');
+
+  // Fórmula Mifflin-St Jeor (Padrão Ouro Internacional)
+  let tmb = (10 * p) + (6.25 * a) - (5 * id) + (isMasc ? 5 : -161);
+
+  // Fator de Atividade
+  let fator = 1.2;
+  const nv = (nivelAtividade || '').toLowerCase();
+  if (nv.includes('leve')) fator = 1.375;
+  else if (nv.includes('moderad')) fator = 1.55;
+  else if (nv.includes('muito') || nv.includes('intenso')) fator = 1.725;
+  else if (nv.includes('extrem')) fator = 1.9;
+
+  const get = Math.round(tmb * fator);
+
+  // Ajuste por Objetivo
+  let caloriasAlvo = get;
+  const obj = (objetivo || '').toLowerCase();
+  if (obj.includes('emagrec') || obj.includes('perda') || obj.includes('defin')) {
+    caloriasAlvo = Math.max(1200, Math.round(get - 450)); // Déficit seguro
+  } else if (obj.includes('hipertrofia') || obj.includes('ganho') || obj.includes('massa')) {
+    caloriasAlvo = Math.round(get + 350); // Superávit limpo
+  }
+
+  // Divisão de Macros em Gramas
+  // Proteína: 2.0g/kg (ou 1.6-2.2g)
+  const protG = Math.round(p * 2.0);
+  const protKcal = protG * 4;
+
+  // Gordura: 0.8g/kg (25-30% das calorias)
+  const gordG = Math.round(p * 0.85);
+  const gordKcal = gordG * 9;
+
+  // Carboidratos: Restante calórico
+  const carboKcal = Math.max(0, caloriasAlvo - (protKcal + gordKcal));
+  const carboG = Math.round(carboKcal / 4);
+
+  return {
+    tmb: Math.round(tmb),
+    get,
+    caloriasAlvo,
+    macros: {
+      proteinas: protG,
+      carboidratos: carboG,
+      gorduras: gordG
+    }
+  };
+}
+
 // 7. Popular dados de exemplo no Neon para a nutricionista logada
 export async function seedDemoData(nutricionistaId) {
   const sql = getSql();
