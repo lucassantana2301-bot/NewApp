@@ -112,6 +112,7 @@ export default function PatientFormScreen({ user, onCancel, onSaveSuccess }) {
     // Aba 1 - Pessoal
     nome: '',
     data_nascimento: '',
+    data_inicio_tratamento: new Date().toISOString().split('T')[0],
     sexo: 'Feminino',
     telefone: '',
     whatsapp: '',
@@ -374,7 +375,21 @@ export default function PatientFormScreen({ user, onCancel, onSaveSuccess }) {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+              {/* Data de Início do Tratamento */}
+              <div className="form-group">
+                <label className="form-label">
+                  Data de início do tratamento <span style={{ color: 'var(--danger)' }}>*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={formData.data_inicio_tratamento}
+                  onChange={(e) => setFormData({ ...formData, data_inicio_tratamento: e.target.value })}
+                  className="form-input"
+                />
+              </div>
+
               {/* Data de Nascimento + Cálculo de Idade */}
               <div className="form-group">
                 <label className="form-label">
